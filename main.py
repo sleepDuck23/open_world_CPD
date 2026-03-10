@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from cumsum import detect_cusum, detect_pulsif
+from scipy.signal import find_peaks
+from scipy.stats import median_abs_deviation
+from models import detect_cusum, detect_rulsif
 from generate_signal import generate_segmented_timeseries
 
 # data parameters
@@ -14,8 +16,23 @@ data, labels, class_params = generate_segmented_timeseries(K, num_classes, num_c
 threshold = 100
 s_pos, s_neg, detected_indices = detect_cusum(data, threshold, drift=0.5, calibration_points = 50)
 
-# Calculate PE Scores
-pe_scores = detect_pulsif(data, window_size=10, step=1)
+# Rulsif
+rulsif_scores = detect_rulsif(data, window_size=35, step=1, alpha=0.1, sigma=2, lambda_=0.05)
+
+# Define the threshold (e.g., the top 2% of scores)
+#rulsif_threshold = np.percentile(rulsif_scores, 98)
+# Calculate the median of the scores
+median_score = np.median(rulsif_scores)
+
+# Calculate how noisy the normal baseline is
+mad = median_abs_deviation(rulsif_scores)
+
+# Set threshold to: Median + (3 * Noise Level)
+# This will adapt to the specific dataset being analyzed!
+rulsif_threshold = median_score + (5 * mad)
+# Find peaks that cross the threshold. 
+# 'distance=20' ensures we only get one detection per window size, preventing duplicate triggers.
+detected_indices, _ = find_peaks(rulsif_scores, height=rulsif_threshold, distance=20)
 
 # Visualization data input
 plt.figure(figsize=(12, 5))
@@ -57,18 +74,37 @@ ax2.legend()
 plt.tight_layout()
 
 
+
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
-ax1.plot(data, color='gray', alpha=0.5)
+# Top Plot: Signal, True Changes, AND Detected Changes
+ax1.plot(data, color='gray', alpha=0.6, label='Signal')
+
+# Draw True Changes (Blue)
 true_changes = np.where(np.diff(labels) != 0)[0]
 for tc in true_changes:
-    ax1.axvline(tc, color='blue', label='True Change' if tc == true_changes[0] else "")
-ax1.set_title("Signal and True Change Points")
+    ax1.axvline(tc, color='blue', linestyle='-', linewidth=2, label='True Change' if tc == true_changes[0] else "")
 
-ax2.plot(pe_scores, color='purple', label='Pearson Divergence (uLSIF)')
-ax2.set_title("Pearson Divergence Score (Spikes = Changes)")
-ax2.set_ylim(0, np.percentile(pe_scores, 99)*1.5) # Zoom in on relevant spikes
-ax2.legend()
+# Draw RULSIF Detections (Red)
+for dc in detected_indices:
+    ax1.axvline(dc, color='red', linestyle='--', linewidth=2, label='RULSIF Detection' if dc == detected_indices[0] else "")
+
+ax1.set_title(f"Detection Performance: Blue (Actual) vs Red (RULSIF)")
+ax1.legend(loc="upper right")
+
+# Bottom Plot: RULSIF Divergence Score
+ax2.plot(rulsif_scores, color='purple', linewidth=1.5, label='Relative Pearson Divergence')
+ax2.axhline(rulsif_threshold, color='red', linestyle=':', label=f'Threshold ({rulsif_threshold:.2f})')
+
+# Mark the specific peaks we found on the score line
+ax2.plot(detected_indices, rulsif_scores[detected_indices], "x", color='red', markersize=8, label='Detected Peaks')
+
+ax2.set_title("RULSIF Score (Spikes above threshold trigger a detection)")
+ax2.set_ylim(0, np.percentile(rulsif_scores, 99.5) * 1.2) 
+ax2.set_ylabel("Divergence Score")
+ax2.legend(loc="upper right")
 
 plt.tight_layout()
+
+
 plt.show()

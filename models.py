@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import cdist
 
 def detect_cusum(data, threshold=15, drift=0.5, calibration_points=10):
     """
@@ -71,19 +72,71 @@ def compute_pearson_divergence(ref_win, test_win, sigma=0.1, alpha=0.05):
     except np.linalg.LinAlgError:
         return 0
 
-def detect_pulsif(data, window_size=50, step=5):
+
+def compute_rulsif_score(X_ref, X_test, alpha=0.1, sigma=1.0, lambda_=0.01):
     """
-    Sliding window Pearson Divergence detection.
+    Computes the alpha-Relative Pearson Divergence between two sets of samples.
     """
-    n = len(data)
-    pe_scores = np.zeros(n)
+    n_ref = X_ref.shape[0]
+    n_test = X_test.shape[0]
     
-    # Slide through the data
-    for t in range(window_size, n - window_size, step):
-        ref_win = data[t - window_size : t]
-        test_win = data[t : t + window_size]
+    # Step 1: Define basis function centers
+    # We use the test samples as the centers for our Gaussian kernels
+    centers = X_test 
+    b = centers.shape[0]
+    
+    # Step 2: Compute Gaussian Kernel Matrices (Phi)
+    # cdist computes the squared euclidean distance between every pair of points
+    dist_ref = cdist(X_ref, centers, metric='sqeuclidean')
+    Phi_ref = np.exp(-dist_ref / (2.0 * sigma**2))
+    
+    dist_test = cdist(X_test, centers, metric='sqeuclidean')
+    Phi_test = np.exp(-dist_test / (2.0 * sigma**2))
+    
+    # Step 3: Construct the Empirical Matrices (H_hat and h_hat)
+    H_hat_ref = np.dot(Phi_ref.T, Phi_ref) / n_ref
+    H_hat_test = np.dot(Phi_test.T, Phi_test) / n_test
+    
+    # H_hat represents the mixture distribution q_alpha
+    H_hat = (1.0 - alpha) * H_hat_ref + alpha * H_hat_test
+    
+    # h_hat represents the test distribution p_test
+    h_hat = np.mean(Phi_test, axis=0)
+    
+    # Step 4: Solve for theta analytically
+    # (H_hat + lambda * I) * theta = h_hat
+    I = np.eye(b)
+    theta = np.linalg.solve(H_hat + lambda_ * I, h_hat)
+    
+    # Optional but recommended: Density ratios shouldn't be negative
+    theta = np.maximum(theta, 0)
+    
+    # Step 5: Compute the Relative Pearson Divergence score
+    score = 0.5 * np.dot(theta, h_hat) - 0.5
+    
+    return max(0, score) # Divergence is strictly non-negative
+
+def detect_rulsif(data, window_size=20, step=1, alpha=0.1, sigma=1.0, lambda_=0.01):
+    """
+    Slides two adjacent windows across the time series to detect distribution changes.
+    """
+    # Ensure data is 2D for scipy's cdist (samples x features)
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
         
-        score = compute_pearson_divergence(ref_win, test_win)
-        pe_scores[t] = score
+    N = len(data)
+    scores = np.zeros(N)
+    
+    # Slide a pair of adjacent windows across the data
+    # [ --- X_ref --- ][ --- X_test --- ]
+    for t in range(window_size, N - window_size, step):
+        X_ref = data[t - window_size : t]
+        X_test = data[t : t + window_size]
         
-    return pe_scores
+        # Calculate divergence between the past window and current window
+        score = compute_rulsif_score(X_ref, X_test, alpha, sigma, lambda_)
+        
+        # The score is recorded at the boundary point 't'
+        scores[t] = score
+        
+    return scores
