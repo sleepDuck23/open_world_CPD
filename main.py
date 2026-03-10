@@ -19,20 +19,14 @@ s_pos, s_neg, detected_indices = detect_cusum(data, threshold, drift=0.5, calibr
 # Rulsif
 rulsif_scores = detect_rulsif(data, window_size=35, step=1, alpha=0.1, sigma=2, lambda_=0.05)
 
-# Define the threshold (e.g., the top 2% of scores)
-#rulsif_threshold = np.percentile(rulsif_scores, 98)
-# Calculate the median of the scores
 median_score = np.median(rulsif_scores)
 
-# Calculate how noisy the normal baseline is
 mad = median_abs_deviation(rulsif_scores)
 
-# Set threshold to: Median + (3 * Noise Level)
-# This will adapt to the specific dataset being analyzed!
-rulsif_threshold = median_score + (5 * mad)
-# Find peaks that cross the threshold. 
-# 'distance=20' ensures we only get one detection per window size, preventing duplicate triggers.
-detected_indices, _ = find_peaks(rulsif_scores, height=rulsif_threshold, distance=20)
+rulsif_threshold = median_score + (7 * mad)
+
+detected_indices, _ = find_peaks(rulsif_scores, height=rulsif_threshold, distance=35)
+
 
 # Visualization data input
 plt.figure(figsize=(12, 5))
