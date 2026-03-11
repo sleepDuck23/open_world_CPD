@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
+from scipy.linalg import eigh
 
 def detect_cusum(data, threshold=15, drift=0.5, calibration_points=10):
     """
@@ -140,3 +141,71 @@ def detect_rulsif(data, window_size=20, step=1, alpha=0.1, sigma=1.0, lambda_=0.
         scores[t] = score
         
     return scores
+
+def compute_spd_covariance(X, epsilon=1e-5):
+    """
+    Computes the covariance matrix and regularizes it to be strictly 
+    Symmetric Positive Definite (SPD). Handles both 1D and 2D data.
+    """
+    # Ensure X is 2D for consistent np.cov behavior: (Samples, Features)
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+        
+    # Calculate covariance (rowvar=False means columns are variables/channels)
+    S = np.cov(X, rowvar=False)
+    
+    # Handle the 1D case where np.cov returns a 0D scalar
+    if S.ndim == 0:
+        S = np.array([[S]])
+        
+    # Diagonal loading (regularization) to guarantee SPD
+    S_spd = S + epsilon * np.eye(S.shape[0])
+    return S_spd
+
+def logm_spd(S):
+    """
+    Computes the principal matrix logarithm of an SPD matrix.
+    """
+    # Eigendecomposition (highly stable for symmetric matrices)
+    evals, evecs = eigh(S)
+    
+    # Take the natural log of the eigenvalues 
+    # (np.maximum prevents math errors if an evalue is microscopically close to 0)
+    log_evals = np.diag(np.log(np.maximum(evals, 1e-12)))
+    
+    # Reconstruct the matrix in the Tangent Space
+    return evecs @ log_evals @ evecs.T
+
+def detect_log_euclidean_kernel(data, window_size=35, step=1, sigma=1.0):
+    """
+    Slides two adjacent windows across the time series, computes their SPD 
+    covariance matrices, maps them to the Tangent Space, and calculates 
+    the Log-Euclidean Gaussian Kernel difference.
+    """
+    N = len(data)
+    kernel_dissimilarities = np.zeros(N)
+    
+    # Slide a pair of adjacent windows: [ --- Past --- ][ --- Future --- ]
+    for t in range(window_size, N - window_size, step):
+        X_past = data[t - window_size : t]
+        X_future = data[t : t + window_size]
+        
+        # 1. Get SPD Covariances
+        S_past = compute_spd_covariance(X_past)
+        S_future = compute_spd_covariance(X_future)
+        
+        # 2. Map to flat Tangent Space via Matrix Logarithm
+        log_S_past = logm_spd(S_past)
+        log_S_future = logm_spd(S_future)
+        
+        # 3. Compute Log-Euclidean Distance Squared (Frobenius norm)
+        diff = log_S_past - log_S_future
+        d_le_squared = np.trace(diff @ diff.T) 
+        
+        # 4. Compute Gaussian Kernel Similarity (1 = identical, 0 = completely different)
+        K_LE = np.exp(-d_le_squared / (2.0 * sigma**2))
+        
+        # 5. Store Dissimilarity (1 - K_LE) so peaks represent changes
+        kernel_dissimilarities[t] = 1.0 - K_LE
+        
+    return kernel_dissimilarities
