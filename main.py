@@ -6,9 +6,9 @@ from models import detect_cusum, detect_rulsif, detect_log_euclidean_kernel
 from generate_signal import generate_segmented_timeseries
 
 # data parameters
-K = 2000
-num_classes = 3
-num_changes = 5
+K = 1000
+num_classes = 2
+num_changes = 3
 
 data, labels, class_params = generate_segmented_timeseries(K, num_classes, num_changes)
 
@@ -28,7 +28,7 @@ rulsif_threshold = median_score + (7 * mad)
 rulsif_detected, _ = find_peaks(rulsif_scores, height=rulsif_threshold, distance=35)
 
 # Log-Euclidean Kernel
-le_scores = detect_log_euclidean_kernel(data, window_size=35, step=1, sigma=0.5)
+le_scores = detect_log_euclidean_kernel(data, window_size=20, step=1, sigma=1.5)
 
 # Dynamic thresholding 
 le_median = np.median(le_scores)
