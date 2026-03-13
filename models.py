@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
-from scipy.linalg import eigh
+from scipy.linalg import eigh, expm
+from scipy.stats import median_abs_deviation
 
 def detect_cusum(data, threshold=15, drift=0.5, calibration_points=10):
     """
@@ -209,3 +210,167 @@ def detect_log_euclidean_kernel(data, window_size=35, step=1, sigma=1.0):
         kernel_dissimilarities[t] = 1.0 - K_LE
         
     return kernel_dissimilarities
+
+class OnlineManifoldCPD:
+    def __init__(self, window_size=40, buffer_size=100, threshold_multiplier=5.0, cluster_radius=1.5, sigma=2.0):
+        # Configuration
+        self.W = window_size
+        self.buffer_size = buffer_size
+        self.multiplier = threshold_multiplier
+        self.cluster_radius = cluster_radius
+        self.sigma = sigma
+        
+        # Data Streams
+        self.data_stream = []        # Holds recent raw data (size 2*W)
+        self.cov_history = []        # Holds covariances of the CURRENT state
+        self.dist_buffer = []        # History buffer of normal distances (for baseline)
+        
+        # State Machine Variables
+        self.state = 'A_MONITORING'  # States: A_MONITORING, B_PEAK_HUNTING, C_COOLDOWN
+        self.cooldown_counter = 0
+        self.max_peak_val = -1
+        self.max_peak_time = -1
+        self.current_time = 0
+        
+        # Clustering Memory
+        self.clusters = []           # List of dicts: {'N': int, 'tangent_mean': array, 'centroid': array}
+        self.detected_changes = []
+        self.state_labels = []       # Tracks which cluster ID is active at each change
+
+    def expm_spd(self, M):
+        """Helper: Maps tangent space matrix back to SPD Manifold."""
+        evals, evecs = eigh(M)
+        exp_evals = np.diag(np.exp(evals))
+        return evecs @ exp_evals @ evecs.T
+
+    def process_next_point(self, x):
+        """Feeds one data point into the system and returns status."""
+        self.current_time += 1
+        self.data_stream.append(x)
+        
+        # Maintain only enough data for Past and Future windows
+        if len(self.data_stream) > 2 * self.W:
+            self.data_stream.pop(0)
+            
+        # 1. Warm-up Phase: Not enough data yet
+        if len(self.data_stream) < 2 * self.W:
+            return None, "Warming up"
+
+        # 2. Compute Windows & Distance
+        X_past = np.array(self.data_stream[:self.W])
+        X_future = np.array(self.data_stream[self.W:])
+        
+        S_past = compute_spd_covariance(X_past)
+        S_future = compute_spd_covariance(X_future)
+        
+        # Save past covariance for potential clustering later
+        self.cov_history.append(S_past)
+        
+        log_S_past = logm_spd(S_past)
+        log_S_future = logm_spd(S_future)
+        
+        diff = log_S_past - log_S_future
+        d_le_squared = np.trace(diff @ diff.T)
+        K_LE = np.exp(-d_le_squared / (2.0 * self.sigma**2))
+        dist = 1.0 - K_LE # Current dissimilarity
+        
+        # 3. Dynamic Baseline Calculation
+        if len(self.dist_buffer) < self.buffer_size:
+            self.dist_buffer.append(dist)
+            return dist, "Building Baseline"
+            
+        median_dist = np.median(self.dist_buffer)
+        mad_dist = median_abs_deviation(self.dist_buffer)
+        threshold = median_dist + (self.multiplier * mad_dist)
+
+        # 4. The Peak Hunting State Machine
+        event = None
+
+        if self.state == 'A_MONITORING':
+            if dist > threshold:
+                # Spike detected! Enter State B. Do NOT add to dist_buffer.
+                self.state = 'B_PEAK_HUNTING'
+                self.max_peak_val = dist
+                self.max_peak_time = self.current_time - self.W
+            else:
+                # Normal operation. Update baseline.
+                self.dist_buffer.append(dist)
+                self.dist_buffer.pop(0)
+
+        elif self.state == 'B_PEAK_HUNTING':
+            if dist > self.max_peak_val:
+                # Still climbing the peak
+                self.max_peak_val = dist
+                self.max_peak_time = self.current_time - self.W
+                
+            elif dist < threshold: # The spike has ended
+                # PEAK CONFIRMED!
+                self.detected_changes.append(self.max_peak_time)
+                
+                # Classify the completed past state
+                cluster_id = self._classify_and_update_state()
+                event = f"Change at t={self.max_peak_time}, Assigned to Cluster {cluster_id}"
+                
+                # Reset for cooldown
+                self.state = 'C_COOLDOWN'
+                self.cooldown_counter = self.W
+                self.cov_history = [] # Clear history for the new state
+
+        elif self.state == 'C_COOLDOWN':
+            self.cooldown_counter -= 1
+            if self.cooldown_counter <= 0:
+                self.state = 'A_MONITORING'
+                # Optional: clear baseline to learn the new regime quickly
+                self.dist_buffer = [] 
+
+        return dist, event
+
+    def _classify_and_update_state(self):
+        """Computes the Fréchet mean of the completed state and clusters it."""
+        if not self.cov_history:
+            return -1
+            
+        # 1. Compute Tangent-Space Mean for the recent state
+        log_covs = [logm_spd(S) for S in self.cov_history]
+        M_new = np.mean(log_covs, axis=0) # Arithmetic mean in tangent space
+        m = len(log_covs)
+        
+        # 2. Check against known clusters
+        best_dist = float('inf')
+        best_cluster = -1
+        
+        for idx, cluster in enumerate(self.clusters):
+            # Compute Log-Euclidean distance between new mean and cluster centroid
+            diff = M_new - cluster['tangent_mean']
+            dist = np.sqrt(np.trace(diff @ diff.T))
+            
+            if dist < best_dist:
+                best_dist = dist
+                best_cluster = idx
+                
+        # 3. Known vs Unknown
+        if best_dist < self.cluster_radius:
+            # KNOWN STATE: Incremental Update
+            c = self.clusters[best_cluster]
+            N_tot = c['N']
+            # Weighted average in tangent space
+            M_updated = ((N_tot * c['tangent_mean']) + (m * M_new)) / (N_tot + m)
+            
+            self.clusters[best_cluster]['tangent_mean'] = M_updated
+            self.clusters[best_cluster]['centroid'] = self.expm_spd(M_updated)
+            self.clusters[best_cluster]['N'] += m
+            
+            self.state_labels.append(best_cluster)
+            return best_cluster
+            
+        else:
+            # UNKNOWN STATE: Create new cluster
+            new_cluster = {
+                'N': m,
+                'tangent_mean': M_new,
+                'centroid': self.expm_spd(M_new)
+            }
+            self.clusters.append(new_cluster)
+            new_id = len(self.clusters) - 1
+            self.state_labels.append(new_id)
+            return new_id
