@@ -7,10 +7,10 @@ from models import OnlineManifoldCPD
 
 # --- 1. Generate the Multivariate Data ---
 num_channels = 3
-num_classes = 3
-num_changes = 3
+num_classes = 2
+num_changes = 1
 num_data_points = 5000
-min_spacing = 100
+min_spacing = 2500
 
 data, labels, classes = generate_ssm_timeseries(num_channels, num_classes, num_changes, num_data_points, min_spacing)
 true_changes = np.where(np.diff(labels) != 0)[0]
@@ -18,11 +18,11 @@ true_order = [int(labels[0])] + [int(labels[tc + 1]) for tc in true_changes]
 print(f"True order of classes: {true_order}")
 
 # --- 2. Initialize the Online Detector ---
-window_size = 50
+window_size = 100
 detector = OnlineManifoldCPD(
     window_size=window_size, 
-    buffer_size=50, 
-    threshold_multiplier=10.0, 
+    buffer_size=100, 
+    threshold_multiplier=5.0, 
     cluster_radius=0.5,
     sigma=2.0
 )
