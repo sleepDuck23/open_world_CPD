@@ -2,6 +2,23 @@ import numpy as np
 from scipy.linalg import logm
 import matplotlib.pyplot as plt
 
+def compute_single_spd(data, t, L, reg_epsilon=1e-5):
+    """
+    Computes a single SPD covariance matrix ending at time t.
+    """
+    d = data.shape[1]
+    
+    # Slice exactly L data points up to t
+    window_data = data[t - L + 1 : t + 1]
+    
+    # Compute standard covariance
+    cov_matrix = np.cov(window_data, rowvar=False)
+    
+    # Regularize to ensure strictly SPD
+    spd_matrix = cov_matrix + np.eye(d) * reg_epsilon
+    
+    return spd_matrix
+
 def compute_manifold_windows(data, N, L, t, reg_epsilon=1e-5):
     """
     Computes reference and test windows of SPD covariance matrices from a time series.
@@ -160,10 +177,12 @@ class SPD_NOUGAT:
         gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
         self.theta = self.theta - self.mu * gradient
         
-        # 5. Compute test statistic (Step 13)
+        # 5. Compute test statistic 
         g = np.dot(self.theta.T, h_test)
+
+        print(f"Time {t}: max_k={max_k:.4f}, g={g:.4f}")
         
-        # 6. Check for change point (Step 14 & 15)
+        # 6. Check for change point 
         if abs(g + 1) > self.xi:
             self.changepoints.append(t + 1)
             
