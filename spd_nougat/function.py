@@ -180,7 +180,7 @@ class SPD_NOUGAT:
         # 5. Compute test statistic 
         g = np.dot(self.theta.T, h_test)
 
-        print(f"Time {t}: max_k={max_k:.4f}, g={g:.4f}")
+        print(f"Time {t}: max_k={max_k:.4f}, g={g:.4f}, dictionary size={self.L}")
         
         # 6. Check for change point 
         if abs(g + 1) > self.xi:
