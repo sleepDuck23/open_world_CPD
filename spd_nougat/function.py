@@ -187,4 +187,38 @@ class SPD_NOUGAT:
             self.changepoints.append(t + 1)
             
         return g
+    
+def warm_start_dict(warmup_series, eta_0, sigma):
+    """
+    Builds a sparse initial dictionary from a pre-training window.
+    Highly optimized: caches matrix logarithms and vectorizes distance calculations
+    to avoid redundant scipy.linalg.logm calls.
+    """
+   
+    dictionary = [warmup_series[0].copy()]
+    
+    log_dict = [np.real(logm(warmup_series[0]))]
+    
+   
+    for S in warmup_series[1:]:
+        
+        log_S = np.real(logm(S))
+        
+        log_D_array = np.array(log_dict)
+        
+        diffs = log_D_array - log_S
+        
+        sq_distances = np.sum(diffs**2, axis=(1, 2))
+       
+        kernel_values = np.exp(-sq_distances / (2 * sigma**2))
+        
+        max_k = np.max(kernel_values)
+        
+        if max_k <= eta_0:
+            
+            dictionary.append(S)
+            
+            log_dict.append(log_S)
+            
+    return np.array(dictionary)
 

@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import logm
 import matplotlib.pyplot as plt
-from function import  SPD_NOUGAT
+from function import  SPD_NOUGAT, warm_start_dict
 from spd_generation import generate_wishart_series
 
 np.random.seed(42)
@@ -12,6 +12,12 @@ change_point = 150
 L_window = 10  # Data points per covariance matrix
 N_window = 10  # Covariance matrices per reference/test window
 
+eta_0_val = 0.5
+sigma_val = 2
+nu_val = 1e-4
+mu_val = 0.1
+xi_val = 1.2
+
 raw_data = generate_wishart_series(total_steps=Total_Time, change_point=change_point, dim=d)
 
 # Calculate when we can start (we need enough history to form the first windows)
@@ -20,12 +26,14 @@ start_t = 2 * N_window - 1
 # Compute the full initial windows
 Sref = raw_data[start_t - 2 * N_window + 1 : start_t - N_window + 1].copy()
 Stest = raw_data[start_t - N_window + 1 : start_t + 1].copy()
-initial_dict = Sref.copy()
+Start = raw_data[0:start_t+1].copy()
+
+initial_dict = warm_start_dict(Start, eta_0=eta_0_val, sigma=sigma_val)
 
 
 # Initialize NOUGAT with parameters tuned for covariance shifts
-nougat = SPD_NOUGAT(mu=0.1, initial_dictionary=initial_dict, nu=1e-4, 
-                    eta_0=0.5, xi=1.2, sigma=2)
+nougat = SPD_NOUGAT(mu=mu_val, initial_dictionary=initial_dict, nu=nu_val, 
+                    eta_0=eta_0_val, xi=xi_val, sigma=sigma_val)
 
 g_statistics = []
 dic_sizes = []
