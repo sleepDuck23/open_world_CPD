@@ -5,7 +5,7 @@ from function import  SPD_NOUGAT, warm_start_dict
 from spd_generation import generate_wishart_series
 
 np.random.seed(42)
-Total_Time = 200
+Total_Time = 300
 d = 3
 change_point = 150
 
@@ -13,7 +13,7 @@ L_window = 10  # Data points per covariance matrix
 N_window = 10  # Covariance matrices per reference/test window
 
 eta_0_val = 0.5
-sigma_val = 2
+sigma_val = 3
 nu_val = 1e-4
 mu_val = 0.1
 xi_val = 1.2
@@ -26,9 +26,8 @@ start_t = 2 * N_window - 1
 # Compute the full initial windows
 Sref = raw_data[start_t - 2 * N_window + 1 : start_t - N_window + 1].copy()
 Stest = raw_data[start_t - N_window + 1 : start_t + 1].copy()
-Start = raw_data[0:start_t+1].copy()
 
-initial_dict = warm_start_dict(Start, eta_0=eta_0_val, sigma=sigma_val)
+initial_dict = warm_start_dict(Sref, eta_0=eta_0_val, sigma=sigma_val)
 
 
 # Initialize NOUGAT with parameters tuned for covariance shifts

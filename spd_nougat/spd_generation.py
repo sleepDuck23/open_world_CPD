@@ -8,15 +8,15 @@ def generate_wishart_series(total_steps, change_point, dim):
     with a change point.
     """
     # --- Parameters for Regime 1 (Before change point) ---
-    df1 = dim + 5  # Degrees of freedom must be >= dimension
+    df1 = dim   # Degrees of freedom must be >= dimension
     scale1 = np.eye(dim) * 2.0  # Simple diagonal scale matrix
     
     # --- Parameters for Regime 2 (After change point) ---
-    df2 = dim + 15
+    df2 = dim + 10
     # Create a dense, random SPD scale matrix for the second regime
     np.random.seed(42) 
     A = np.random.randn(dim, dim)
-    scale2 = A @ A.T + np.eye(dim) # A*A^T ensures positive definiteness
+    scale2 = A @ A.T  # A*A^T ensures positive definiteness
 
     # --- Generate the Series ---
     matrix_series = []

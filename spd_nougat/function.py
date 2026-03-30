@@ -148,7 +148,7 @@ class SPD_NOUGAT:
         S_ref and S_test are the current sliding windows (shape N x d x d).
         """
         # 1. Compute kernel of the new observation against current dictionary
-        k_S_new = self._kernel_LE_dictionary(S_new)
+        k_S_new = self._kernel_LE_dictionary(S_test[0])
         max_k = np.max(np.abs(k_S_new)) # Coherence measure for the new observation against the dictionary
         
         # 2. Dictionary Update Logic
