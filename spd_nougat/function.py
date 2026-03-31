@@ -79,114 +79,6 @@ def compute_manifold_windows(data, N, L, t, reg_epsilon=1e-5):
         Stest[i] = get_spd_cov(tau)
         
     return Sref, Stest
-
-class SPD_NOUGAT:
-    def __init__(self, mu, initial_dictionary, nu, eta_0, xi, sigma):
-        """
-        Initialize the NOUGAT algorithm for SPD matrices.
-        initial_dictionary expects a 3D numpy array of shape (L, d, d)
-        """
-        self.mu = mu
-        self.nu = nu
-        self.eta_0 = eta_0
-        self.xi = xi
-        self.sigma = sigma
-        
-        # Dictionary D is a 3D array: L matrices, each of size d x d
-        self.D = np.array(initial_dictionary) 
-        self.L = self.D.shape[0]
-        self.theta = np.zeros(self.L)
-        
-        self.changepoints = []
-
-    def _kernel_LE_dictionary(self, S_i):
-        """
-        Compute the Log-Euclidean kernel between the dictionary and a sequence of SPD matrices.
-
-        """
-        kernel_values = np.zeros(self.D.shape[0])
-        for i in range(self.D.shape[0]):
-            log_D = logm(self.D[i])
-            log_S = logm(S_i)
-            distance = np.linalg.norm(log_S - log_D, 'fro')
-            kernel_values[i]  = np.exp(-distance**2 / (2 * self.sigma**2))
-        return kernel_values
-
-    def _h_window(self, S):
-        """
-        Compute the h-window function (average kernel vector) for a sequence of SPD matrices.
-        """
-        h_sum = np.zeros(self.D.shape[0]) 
-
-        for i in range(S.shape[0]):
-            h_sum += self._kernel_LE_dictionary(S[i])
-
-        h_result = h_sum / S.shape[0] 
-
-        return h_result
-
-
-    def _H_window(self, Sref):
-        """
-        Compute the H_ref matrix (average outer product of kernel vectors) 
-        for the reference window of SPD matrices.
-        """
-        H_sum = np.zeros((self.D.shape[0], self.D.shape[0]))
-
-        for i in range(Sref.shape[0]):
-            k_vec = self._kernel_LE_dictionary(Sref[i])
-            H_sum += np.outer(k_vec, k_vec)
-
-        H_result = H_sum / Sref.shape[0]
-
-        return H_result
-    
-    def step(self, t, S_ref, S_test, S_new):
-        """
-        Executes one time step (t) of the NOUGAT algorithm.
-        S_new is the new SPD matrix observation (shape d x d).
-        S_ref and S_test are the current sliding windows (shape N x d x d).
-        """
-        # 1. Compute kernel of the new observation against current dictionary
-        k_S_new = self._kernel_LE_dictionary(S_test[0])
-        max_k = np.max(np.abs(k_S_new)) # Coherence measure for the new observation against the dictionary
-        
-        # 2. Dictionary Update Logic
-        if max_k > self.eta_0:
-            # Dictionary remains unchanged. theta remains the same size.
-            pass 
-        else:
-            # Add S_new to dictionary (Expand D from L to L+1)
-            # We use np.vstack to add the d x d matrix to the L x d x d dictionary
-            self.D = np.vstack((self.D, [S_new]))
-            self.L += 1
-            
-            # Pad theta with a zero at the end
-            self.theta = np.append(self.theta, 0.0)
-
-        # 3. Compute H, h, and e using the *current* (possibly expanded) dictionary
-        # This resolves the dimension mismatch in Step 10 mathematically cleanly.
-        H_ref = self._H_window(S_ref)
-        h_test = self._h_window(S_test)
-        h_ref = self._h_window(S_ref)
-        
-        e_circ = h_ref - h_test # Step 3 (returns a vector of size L)
-        
-        # 4. Gradient Update for theta (Steps 6 and 10 unified)
-        identity = np.eye(self.L)
-        gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
-        self.theta = self.theta - self.mu * gradient
-        
-        # 5. Compute test statistic 
-        g = np.dot(self.theta.T, h_test)
-
-        print(f"Time {t}: max_k={max_k:.4f}, g={g:.4f}, dictionary size={self.L}")
-        
-        # 6. Check for change point 
-        if abs(g + 1) > self.xi:
-            self.changepoints.append(t + 1)
-            
-        return g
     
 def warm_start_dict(warmup_series, eta_0, sigma):
     """
@@ -222,3 +114,125 @@ def warm_start_dict(warmup_series, eta_0, sigma):
             
     return np.array(dictionary)
 
+class SPD_NOUGAT:
+    def __init__(self, mu, initial_dictionary, nu, eta_0, xi, sigma, cooldown_period):
+        """
+        Initialize the NOUGAT algorithm with internal dictionary library management.
+        """
+        self.mu = mu
+        self.nu = nu
+        self.eta_0 = eta_0
+        self.xi = xi
+        self.sigma = sigma
+        
+        # Dictionary state
+        self.D = np.array(initial_dictionary) 
+        self.L = self.D.shape[0]
+        self.theta = np.zeros(self.L)
+        
+        # --- NEW: Internal state management ---
+        self.dictionary_library = []
+        self.global_changepoints = []
+        self.cooldown_period = cooldown_period
+        self.cooldown_counter = 0
+
+    def _warm_start_dict(self, warmup_series):
+        """
+        Internal method to build a sparse initial dictionary from a flushed window.
+        """
+        dictionary = [warmup_series[0].copy()]
+        log_dict = [np.real(logm(warmup_series[0]))]
+        
+        for S in warmup_series[1:]:
+            log_S = np.real(logm(S))
+            log_D_array = np.array(log_dict)
+            diffs = log_D_array - log_S
+            sq_distances = np.sum(diffs**2, axis=(1, 2))
+            kernel_values = np.exp(-sq_distances / (2 * self.sigma**2))
+            
+            if np.max(kernel_values) <= self.eta_0:
+                dictionary.append(S)
+                log_dict.append(log_S)
+                
+        return np.array(dictionary)
+
+    def _kernel_LE_dictionary(self, S_i):
+        kernel_values = np.zeros(self.D.shape[0])
+        for i in range(self.D.shape[0]):
+            log_D = logm(self.D[i])
+            log_S = logm(S_i)
+            distance = np.linalg.norm(log_S - log_D, 'fro')
+            kernel_values[i]  = np.exp(-distance**2 / (2 * self.sigma**2))
+        return kernel_values
+
+    def _h_window(self, S):
+        h_sum = np.zeros(self.D.shape[0]) 
+        for i in range(S.shape[0]):
+            h_sum += self._kernel_LE_dictionary(S[i])
+        return h_sum / S.shape[0] 
+
+    def _H_window(self, Sref):
+        H_sum = np.zeros((self.D.shape[0], self.D.shape[0]))
+        for i in range(Sref.shape[0]):
+            k_vec = self._kernel_LE_dictionary(Sref[i])
+            H_sum += np.outer(k_vec, k_vec)
+        return H_sum / Sref.shape[0]
+    
+    def step(self, t, S_ref, S_test, S_new):
+        """
+        Executes one time step. Handles cooldown and dictionary saving internally.
+        """
+        # --- PHASE 1: Stabilization / Cooldown ---
+        if self.cooldown_counter > 0:
+            self.cooldown_counter -= 1
+            
+            # If cooldown just finished, execute the warm start
+            if self.cooldown_counter == 0:
+                # S_ref is now fully flushed and represents the new distribution
+                self.D = self._warm_start_dict(S_ref)
+                self.L = self.D.shape[0]
+                self.theta = np.zeros(self.L)
+                print(f"Time {t}: Warm restart complete. New dict size = {self.L}")
+                
+            return np.nan # Return NaN for the statistic plot during stabilization
+            
+        # --- PHASE 2: Active Detection ---
+        k_S_new = self._kernel_LE_dictionary(S_test[0])
+        max_k = np.max(np.abs(k_S_new)) 
+        
+        if max_k <= self.eta_0:
+            self.D = np.vstack((self.D, [S_new]))
+            self.L += 1
+            self.theta = np.append(self.theta, 0.0)
+            print(f"Time {t}: Added new matrix to dictionary. New size = {self.L}")
+
+        H_ref = self._H_window(S_ref)
+        h_test = self._h_window(S_test)
+        h_ref = self._h_window(S_ref)
+        
+        e_circ = h_ref - h_test 
+        
+        identity = np.eye(self.L)
+        gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
+        self.theta = self.theta - self.mu * gradient
+        
+        g = np.dot(self.theta.T, h_test)
+        
+        # --- PHASE 3: Check for Change Point ---
+        if abs(g) > self.xi:
+            print(f"Time {t}: *** CHANGE DETECTED *** (g={g:.4f})")
+            
+            self.global_changepoints.append(t + 1)
+            
+            # Save current dictionary to the library
+            self.dictionary_library.append(self.D.copy())
+            
+            # Trigger cooldown for the next steps
+            self.cooldown_counter = self.cooldown_period
+            
+        return g
+
+    def finalize(self):
+        """Call this at the very end of your time series to save the last active dictionary."""
+        if self.cooldown_counter == 0:
+            self.dictionary_library.append(self.D.copy())
