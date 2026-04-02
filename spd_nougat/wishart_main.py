@@ -5,18 +5,18 @@ from function import  SPD_NOUGAT, warm_start_dict
 from spd_generation import generate_wishart_series, generate_multiple_wishart_series
 
 np.random.seed(42)
-Total_Time = 1000
+Total_Time = 500
 d = 3
 #change_point = 150
-true_changepoints = [200, 500, 800]
+true_changepoints = [200, 400]
 
 L_window = 20  # Data points per covariance matrix
 N_window = 20  # Covariance matrices per reference/test window
 
 eta_0_val = 0.85
 sigma_val = 3
-nu_val = 1e-4
-mu_val = 0.1
+nu_val = 1e-2
+mu_val = 1e-2
 xi_val = 0.1
 
 cooldown_steps = 2 * N_window

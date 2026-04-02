@@ -130,7 +130,7 @@ class SPD_NOUGAT:
         self.L = self.D.shape[0]
         self.theta = np.zeros(self.L)
         
-        # --- NEW: Internal state management ---
+        # Internal state management 
         self.dictionary_library = []
         self.global_changepoints = []
         self.cooldown_period = cooldown_period
@@ -162,7 +162,7 @@ class SPD_NOUGAT:
             log_D = logm(self.D[i])
             log_S = logm(S_i)
             distance = np.linalg.norm(log_S - log_D, 'fro')
-            kernel_values[i]  = np.exp(-distance**2 / (2 * self.sigma**2))
+            kernel_values[i]  = np.exp(-(distance**2 / (2 * self.sigma**2)))
         return kernel_values
 
     def _h_window(self, S):
@@ -208,9 +208,10 @@ class SPD_NOUGAT:
 
         H_ref = self._H_window(S_ref)
         h_test = self._h_window(S_test)
-        h_ref = self._h_window(S_ref)
-        
+        h_ref = self._h_window(S_ref)        
         e_circ = h_ref - h_test 
+
+        print(f"size of H_ref: {H_ref.shape}, size of theta: {self.theta.shape}, size of e_circ: {e_circ.shape}")
         
         identity = np.eye(self.L)
         gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
