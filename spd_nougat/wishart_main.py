@@ -14,8 +14,8 @@ L_window = 20  # Data points per covariance matrix
 N_window = 20  # Covariance matrices per reference/test window
 
 eta_0_val = 0.85
-sigma_val = 3
-nu_val = 1e-2
+sigma_val = 1.5
+nu_val = 1e-4
 mu_val = 1e-2
 xi_val = 0.1
 

@@ -211,7 +211,6 @@ class SPD_NOUGAT:
         h_ref = self._h_window(S_ref)        
         e_circ = h_ref - h_test 
 
-        print(f"size of H_ref: {H_ref.shape}, size of theta: {self.theta.shape}, size of e_circ: {e_circ.shape}")
         
         identity = np.eye(self.L)
         gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
