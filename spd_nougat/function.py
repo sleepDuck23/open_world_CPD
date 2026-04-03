@@ -211,6 +211,10 @@ class SPD_NOUGAT:
         h_ref = self._h_window(S_ref)        
         e_circ = h_ref - h_test 
 
+        print(f"Time {t}: H_ref = {H_ref}")
+        print(f"Time {t}: e_circ = {e_circ}")
+        print("*********************************")
+
         
         identity = np.eye(self.L)
         gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ

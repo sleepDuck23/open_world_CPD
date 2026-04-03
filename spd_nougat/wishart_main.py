@@ -13,10 +13,10 @@ true_changepoints = [200, 400]
 L_window = 20  # Data points per covariance matrix
 N_window = 20  # Covariance matrices per reference/test window
 
-eta_0_val = 0.85
-sigma_val = 1.5
-nu_val = 1e-4
-mu_val = 1e-2
+eta_0_val = 0.1
+sigma_val = 1
+nu_val = 0.01
+mu_val = 0.047
 xi_val = 0.1
 
 cooldown_steps = 2 * N_window
@@ -108,7 +108,7 @@ ax[0].set_ylabel('Trace Value')
 # ==========================================
 ax[1].plot(time_indices, g_statistics, label='Test Statistic $g_t$', color='blue')
 ax[1].axhline(nougat.xi, color='red', linestyle='--', label='Detection Threshold ($+\\xi$)')
-ax[1].axhline(-nougat.xi, color='red', linestyle='--', label='Detection Threshold ($-\\xi$)')
+#ax[1].axhline(-nougat.xi, color='red', linestyle='--', label='Detection Threshold ($-\\xi$)')
 
 # LOOP: Plot all actual ground-truth change points
 for tcp in true_changepoints:
@@ -124,6 +124,7 @@ ax[1].legend(by_label.values(), by_label.keys(), loc='upper right')
 
 ax[1].set_title('NOUGAT Detection Statistic ($g_t$)')
 ax[1].set_ylabel('Statistic Value')
+
 
 # ==========================================
 # Plot 3: Dictionary Size Evolution
