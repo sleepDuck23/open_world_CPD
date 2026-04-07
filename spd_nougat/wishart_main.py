@@ -8,15 +8,15 @@ np.random.seed(42)
 Total_Time = 500
 d = 3
 #change_point = 150
-true_changepoints = [200, 400]
+true_changepoints = [200, 400]  # Multiple change points for testing
 
 L_window = 20  # Data points per covariance matrix
 N_window = 20  # Covariance matrices per reference/test window
 
-eta_0_val = 0.1
-sigma_val = 1
-nu_val = 0.01
-mu_val = 0.047
+eta_0_val = 0.3
+sigma_val = 1.5
+nu_val = 0.05
+mu_val = 0.075
 xi_val = 0.1
 
 cooldown_steps = 2 * N_window
@@ -61,6 +61,7 @@ for t in range(start_t, Total_Time - 1):
     
     # Save results for plotting
     g_statistics.append(g)
+     
     time_indices.append(t + 1)
     
     # If in cooldown, the dictionary size might technically be 0 or irrelevant, 
@@ -106,10 +107,8 @@ ax[0].set_ylabel('Trace Value')
 # ==========================================
 # Plot 2: NOUGAT Statistic (g_t) & Thresholds
 # ==========================================
-ax[1].plot(time_indices, g_statistics, label='Test Statistic $g_t$', color='blue')
+ax[1].plot(time_indices, g_statistics, label='estimation parameter $g_t$', color='blue')
 ax[1].axhline(nougat.xi, color='red', linestyle='--', label='Detection Threshold ($+\\xi$)')
-#ax[1].axhline(-nougat.xi, color='red', linestyle='--', label='Detection Threshold ($-\\xi$)')
-
 # LOOP: Plot all actual ground-truth change points
 for tcp in true_changepoints:
     ax[1].axvline(tcp, color='green', linestyle='-', linewidth=2, label='Actual Change Point')
@@ -122,7 +121,7 @@ handles, labels = ax[1].get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
 ax[1].legend(by_label.values(), by_label.keys(), loc='upper right')
 
-ax[1].set_title('NOUGAT Detection Statistic ($g_t$)')
+ax[1].set_title('NOUGAT statistic ($g_t$)')
 ax[1].set_ylabel('Statistic Value')
 
 

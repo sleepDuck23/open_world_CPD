@@ -211,10 +211,6 @@ class SPD_NOUGAT:
         h_ref = self._h_window(S_ref)        
         e_circ = h_ref - h_test 
 
-        print(f"Time {t}: H_ref = {H_ref}")
-        print(f"Time {t}: e_circ = {e_circ}")
-        print("*********************************")
-
         
         identity = np.eye(self.L)
         gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
@@ -223,7 +219,7 @@ class SPD_NOUGAT:
         g = np.dot(self.theta.T, h_test)
         
         # --- PHASE 3: Check for Change Point ---
-        if abs(g) > self.xi:
+        if g > self.xi:
             print(f"Time {t}: *** CHANGE DETECTED *** (g={g:.4f})")
             
             self.global_changepoints.append(t + 1)
