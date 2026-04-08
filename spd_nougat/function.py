@@ -178,7 +178,7 @@ class SPD_NOUGAT:
             H_sum += np.outer(k_vec, k_vec)
         return H_sum / Sref.shape[0]
     
-    def step(self, t, S_ref, S_test, S_new):
+    def step(self, t, S_ref, S_test):
         """
         Executes one time step. Handles cooldown and dictionary saving internally.
         """
@@ -201,7 +201,7 @@ class SPD_NOUGAT:
         max_k = np.max(np.abs(k_S_new)) 
         
         if max_k <= self.eta_0:
-            self.D = np.vstack((self.D, [S_new]))
+            self.D = np.vstack((self.D, [S_test[0].copy()]))
             self.L += 1
             self.theta = np.append(self.theta, 0.0)
             print(f"Time {t}: Added new matrix to dictionary. New size = {self.L}")
@@ -213,16 +213,16 @@ class SPD_NOUGAT:
 
         
         identity = np.eye(self.L)
-        gradient = np.dot((H_ref + self.nu * identity), self.theta) + e_circ
+        gradient = (H_ref + self.nu * identity) @ self.theta + e_circ
         self.theta = self.theta - self.mu * gradient
         
-        g = np.dot(self.theta.T, h_test)
+        g = self.theta.T @ h_test
         
         # --- PHASE 3: Check for Change Point ---
         if g > self.xi:
             print(f"Time {t}: *** CHANGE DETECTED *** (g={g:.4f})")
             
-            self.global_changepoints.append(t + 1)
+            self.global_changepoints.append(t)
             
             # Save current dictionary to the library
             self.dictionary_library.append(self.D.copy())

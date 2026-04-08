@@ -63,24 +63,17 @@ def run_iteration(k):
     
     # Run algorithms
     res_nougat = nougat(x, dict_x, n_ref, n_test, mu, nu, gamma)
-    res_rulsif = rulsif(x, dict_x, n_ref, n_test, nu, gamma)
-    res_ma = ma(x, dict_x, n_ref, n_test, gamma)
-    res_knn = knnt(x, n_ref, n_test, k_knn)
     
-    return res_nougat, res_rulsif, res_ma, res_knn
+    return res_nougat
 
 print(f"Running {realmax} iterations across CPU cores...")
 start_time = time.time()
 
-# Run in parallel and unzip the results
+# Run in parallel
 results = Parallel(n_jobs=-1)(delayed(run_iteration)(k) for k in range(realmax))
-res_nougat, res_rulsif, res_ma, res_knn = zip(*results)
 
-# Convert lists of arrays to 2D numpy arrays (shape: time x iterations)
-t_nougat = np.column_stack(res_nougat)
-t_rulsif = np.column_stack(res_rulsif)
-t_ma = np.column_stack(res_ma)
-t_knn = np.column_stack(res_knn)
+# Convert the list of arrays directly into a 2D numpy array
+t_nougat = np.column_stack(results)
 
 print(f"Simulation finished in {time.time() - start_time:.2f} seconds.")
 
@@ -92,26 +85,14 @@ nc_detect = nc - n_ref - n_test
 
 # Slicing the pre-change (t0) and post-change (t1) periods
 t0_nougat = t_nougat[t_burn-1 : nc_detect-1, :]
-t0_rulsif = t_rulsif[t_burn-1 : nc_detect-1, :]
-t0_ma     = t_ma[t_burn-1 : nc_detect-1, :]
-t0_knn    = t_knn[t_burn-1 : nc_detect-1, :]
 
 t1_nougat = t_nougat[nc_detect-1 :, :]
-t1_rulsif = t_rulsif[nc_detect-1 :, :]
-t1_ma     = t_ma[nc_detect-1 :, :]
-t1_knn    = t_knn[nc_detect-1 :, :]
 
 # Compute PFA
 pfa_nougat, xi_nougat = comp_pfa(t0_nougat)
-pfa_rulsif, xi_rulsif = comp_pfa(t0_rulsif)
-pfa_ma, xi_ma         = comp_pfa(t0_ma)
-pfa_knn, xi_knn       = comp_pfa(t0_knn)
 
 # Compute ROC
 pfa_roc_nougat, pd_roc_nougat, _ = comp_roc(t0_nougat, t1_nougat, xi_pl=xi_nougat)
-pfa_roc_rulsif, pd_roc_rulsif, _ = comp_roc(t0_rulsif, t1_rulsif, xi_pl=xi_rulsif)
-pfa_roc_ma, pd_roc_ma, _         = comp_roc(t0_ma, t1_ma, xi_pl=xi_ma)
-pfa_roc_knn, pd_roc_knn, _       = comp_roc(t0_knn, t1_knn, xi_pl=xi_knn)
 
 # =========================================================
 # 4. PLOTTING
@@ -122,9 +103,6 @@ plt.rcParams.update({'font.size': 12, 'lines.linewidth': 2})
 # --- Plot 1: ROC Curves ---
 fig, ax = plt.subplots(figsize=(8, 6))
 ax.plot(pfa_roc_nougat, pd_roc_nougat, label="NOUGAT", color="C0")
-ax.plot(pfa_roc_rulsif, pd_roc_rulsif, label="dRuLSIF", color="C1")
-ax.plot(pfa_roc_ma, pd_roc_ma, label="MA", color="C2")
-ax.plot(pfa_roc_knn, pd_roc_knn, label="k-NN", color="C3")
 
 ax.set_xlim(0, 0.2)
 ax.set_ylim(0.0, 1.05)
@@ -136,7 +114,8 @@ plt.title("ROC Curve (Quick Test - 50 Iterations)")
 plt.show()
 
 # --- Plot 2: Time Series ---
-fig, axs = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+# Changed 'axs' to 'ax', adjusted height to 4, and removed sharex
+fig, ax = plt.subplots(1, 1, figsize=(10, 4)) 
 
 def plot_ribbon(ax, x, data, label, color):
     mean_val = np.mean(data, axis=1)
@@ -148,13 +127,11 @@ def plot_ribbon(ax, x, data, label, color):
     ax.legend(loc="upper left")
 
 x_noug_rul = np.arange(n_ref + n_test, nt)
-x_ma_knn = np.arange(n_ref + n_test - 1, nt)
 
-plot_ribbon(axs[0], x_noug_rul, t_nougat, "NOUGAT", "C0")
-plot_ribbon(axs[1], x_noug_rul, t_rulsif, "dRuLSIF", "C1")
-plot_ribbon(axs[2], x_ma_knn, t_ma, "MA", "C2")
-plot_ribbon(axs[3], x_ma_knn, t_knn, "k-NN", "C3")
+# Removed the [0] index and passed the single 'ax' object directly
+plot_ribbon(ax, x_noug_rul, t_nougat, "NOUGAT", "C0") 
 
 plt.tight_layout()
+plt.grid()
 plt.show()
 print("All done! Check your folder for 'quick_test_roc.pdf' and 'quick_test_AllStatistics.pdf'.")

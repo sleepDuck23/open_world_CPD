@@ -5,18 +5,17 @@ from function import  SPD_NOUGAT, warm_start_dict
 from spd_generation import generate_wishart_series, generate_multiple_wishart_series
 
 np.random.seed(42)
-Total_Time = 500
+Total_Time = 1000
 d = 3
 #change_point = 150
-true_changepoints = [200, 400]  # Multiple change points for testing
+true_changepoints = [300, 600, 900]  # Multiple change points for testing
 
-L_window = 20  # Data points per covariance matrix
 N_window = 20  # Covariance matrices per reference/test window
 
-eta_0_val = 0.3
-sigma_val = 1.5
-nu_val = 0.05
-mu_val = 0.075
+eta_0_val = 0.15
+sigma_val = 1 # Standard deviation for noise in the estimation of g_t
+nu_val = 1e-3  
+mu_val = 1e-1
 xi_val = 0.1
 
 cooldown_steps = 2 * N_window
@@ -43,29 +42,24 @@ g_statistics = []
 dic_sizes = []
 time_indices = []
 
-print(f"Starting NOUGAT online change detection from t={start_t} to {Total_Time}...")
+print(f"Starting NOUGAT online change detection from t={start_t+1} to {Total_Time}...")
 
 # 2. Main Loop
-for t in range(start_t, Total_Time - 1):
-    S_new = raw_data[t + 1]
+for t in range(start_t+1, Total_Time):
+    S_new = raw_data[t]
     
-    # The model handles whether it is in cooldown, detecting, or saving dictionaries internally
-    g = nougat.step(t, Sref, Stest, S_new)
-    
-    # Slide the windows (this must happen regardless of cooldown state)
     matrix_leaving_test = Stest[0].copy()
     Sref[:-1] = Sref[1:]
-    Sref[-1] = matrix_leaving_test
+    Sref[-1] = matrix_leaving_test  
+    
     Stest[:-1] = Stest[1:]
-    Stest[-1] = S_new
+    Stest[-1] = S_new               
     
-    # Save results for plotting
+    g = nougat.step(t, Sref, Stest)
+    
+    # 4. Save results
     g_statistics.append(g)
-     
-    time_indices.append(t + 1)
-    
-    # If in cooldown, the dictionary size might technically be 0 or irrelevant, 
-    # but we can just append the current size for the plot
+    time_indices.append(t)  
     dic_sizes.append(nougat.L if nougat.cooldown_counter == 0 else np.nan)
 
 # Catch the final active dictionary
