@@ -12,11 +12,11 @@ true_changepoints = [300, 600, 900]  # Multiple change points for testing
 
 N_window = 20  # Covariance matrices per reference/test window
 
-eta_0_val = 0.15
-sigma_val = 1 # Standard deviation for noise in the estimation of g_t
-nu_val = 1e-3  
+eta_0_val = 0.35
+sigma_val = 1.75 # Standard deviation for noise in the estimation of g_t
+nu_val = 1e-4  
 mu_val = 1e-1
-xi_val = 0.1
+xi_val = 0.2
 
 cooldown_steps = 2 * N_window
 
@@ -42,6 +42,9 @@ g_statistics = []
 dic_sizes = []
 time_indices = []
 
+e_circ_values = []
+theta_values = []
+
 print(f"Starting NOUGAT online change detection from t={start_t+1} to {Total_Time}...")
 
 # 2. Main Loop
@@ -55,12 +58,14 @@ for t in range(start_t+1, Total_Time):
     Stest[:-1] = Stest[1:]
     Stest[-1] = S_new               
     
-    g = nougat.step(t, Sref, Stest)
+    g, theta, e_circ = nougat.step(t, Sref, Stest)
     
     # 4. Save results
     g_statistics.append(g)
     time_indices.append(t)  
     dic_sizes.append(nougat.L if nougat.cooldown_counter == 0 else np.nan)
+    theta_values.append(theta)
+    e_circ_values.append(e_circ)
 
 # Catch the final active dictionary
 nougat.finalize()
@@ -141,5 +146,46 @@ ax[2].set_xlabel('Time Step ($t$)')
 ax[2].set_ylabel('Size')
 
 # Apply tight layout and show
+plt.tight_layout()
+plt.show()
+
+# --- Plotting Phase ---
+# Create a 3-panel subplot sharing the same X-axis (time)
+fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
+
+# Safe extraction of the first element: 
+# Grab index [0] if it's an array, otherwise keep it as np.nan
+theta0_safe = [t[0] if isinstance(t, np.ndarray) else np.nan for t in theta_values]
+ecirc0_safe = [e[0] if isinstance(e, np.ndarray) else np.nan for e in e_circ_values]
+
+# Plot 1: Change Point Statistic (g)
+axes[0].plot(time_indices, g_statistics, color='blue', label='Statistic (g)')
+axes[0].axhline(y=nougat.xi, color='red', linestyle='--', label='Threshold (xi)')
+for cp in nougat.global_changepoints:
+    axes[0].axvline(x=cp, color='orange', linestyle=':', alpha=0.7)
+axes[0].set_ylabel('g value')
+axes[0].set_title('SPD NOUGAT: Detection Statistic')
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+# Plot 2: Theta (First Element)
+axes[1].plot(time_indices, theta0_safe, color='green', label=r'$\theta_0$')
+for cp in nougat.global_changepoints:
+    axes[1].axvline(x=cp, color='orange', linestyle=':', alpha=0.7)
+axes[1].set_ylabel(r'$\theta[0]$')
+axes[1].set_title('Evolution of Dictionary Weight 0')
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+# Plot 3: e_circ (First Element)
+axes[2].plot(time_indices, ecirc0_safe, color='purple', label=r'$e_{circ, 0}$')
+for cp in nougat.global_changepoints:
+    axes[2].axvline(x=cp, color='orange', linestyle=':', alpha=0.7)
+axes[2].set_ylabel(r'$e_{circ}[0]$')
+axes[2].set_xlabel('Time Step (t)')
+axes[2].set_title('Evolution of Virtual Error 0')
+axes[2].legend()
+axes[2].grid(True, alpha=0.3)
+
 plt.tight_layout()
 plt.show()

@@ -194,7 +194,7 @@ class SPD_NOUGAT:
                 self.theta = np.zeros(self.L)
                 print(f"Time {t}: Warm restart complete. New dict size = {self.L}")
                 
-            return np.nan # Return NaN for the statistic plot during stabilization
+            return np.nan, np.nan, np.nan # Return NaN for the statistic plot during stabilization
             
         # --- PHASE 2: Active Detection ---
         k_S_new = self._kernel_LE_dictionary(S_test[0])
@@ -205,6 +205,7 @@ class SPD_NOUGAT:
             self.L += 1
             self.theta = np.append(self.theta, 0.0)
             print(f"Time {t}: Added new matrix to dictionary. New size = {self.L}")
+            print(f"theta values after addition: {self.theta}")
 
         H_ref = self._H_window(S_ref)
         h_test = self._h_window(S_test)
@@ -230,7 +231,7 @@ class SPD_NOUGAT:
             # Trigger cooldown for the next steps
             self.cooldown_counter = self.cooldown_period
             
-        return g
+        return g, self.theta.copy(), e_circ.copy()
 
     def finalize(self):
         """Call this at the very end of your time series to save the last active dictionary."""
