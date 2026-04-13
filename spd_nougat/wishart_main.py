@@ -5,18 +5,18 @@ from function import  SPD_NOUGAT, warm_start_dict
 from spd_generation import generate_wishart_series, generate_multiple_wishart_series
 
 np.random.seed(42)
-Total_Time = 1000
+Total_Time = 500
 d = 3
 #change_point = 150
-true_changepoints = [300, 600, 900]  # Multiple change points for testing
+true_changepoints = [400]  # Multiple change points for testing
 
 N_window = 20  # Covariance matrices per reference/test window
 
-eta_0_val = 0.35
-sigma_val = 1.75 # Standard deviation for noise in the estimation of g_t
+eta_0_val = 0.3
+sigma_val = 1.44 # Standard deviation for noise in the estimation of g_t
 nu_val = 1e-4  
 mu_val = 1e-1
-xi_val = 0.2
+xi_val = 0.5
 
 cooldown_steps = 2 * N_window
 
@@ -186,6 +186,35 @@ axes[2].set_xlabel('Time Step (t)')
 axes[2].set_title('Evolution of Virtual Error 0')
 axes[2].legend()
 axes[2].grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+# Safely calculate the mean of theta and e_circ at each time step
+theta_mean_safe = [np.mean(t) if isinstance(t, np.ndarray) else np.nan for t in theta_values]
+ecirc_mean_safe = [np.mean(e) if isinstance(e, np.ndarray) else np.nan for e in e_circ_values]
+
+# Create a 2-panel subplot sharing the X-axis
+fig2, axes2 = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+
+# Plot 1: Mean of Theta
+axes2[0].plot(time_indices, theta_mean_safe, color='darkgreen', label=r'Mean $\theta$')
+for cp in nougat.global_changepoints:
+    axes2[0].axvline(x=cp, color='orange', linestyle=':', alpha=0.7)
+axes2[0].set_ylabel(r'Mean $\theta$')
+axes2[0].set_title('Evolution of Mean Dictionary Weights')
+axes2[0].legend()
+axes2[0].grid(True, alpha=0.3)
+
+# Plot 2: Mean of e_circ
+axes2[1].plot(time_indices, ecirc_mean_safe, color='darkmagenta', label=r'Mean $e_{circ}$')
+for cp in nougat.global_changepoints:
+    axes2[1].axvline(x=cp, color='orange', linestyle=':', alpha=0.7)
+axes2[1].set_ylabel(r'Mean $e_{circ}$')
+axes2[1].set_xlabel('Time Step (t)')
+axes2[1].set_title('Evolution of Mean Virtual Errors')
+axes2[1].legend()
+axes2[1].grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.show()

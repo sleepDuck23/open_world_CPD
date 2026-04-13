@@ -205,7 +205,6 @@ class SPD_NOUGAT:
             self.L += 1
             self.theta = np.append(self.theta, 0.0)
             print(f"Time {t}: Added new matrix to dictionary. New size = {self.L}")
-            print(f"theta values after addition: {self.theta}")
 
         H_ref = self._H_window(S_ref)
         h_test = self._h_window(S_test)
