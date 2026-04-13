@@ -194,7 +194,7 @@ class SPD_NOUGAT:
                 self.theta = np.zeros(self.L)
                 print(f"Time {t}: Warm restart complete. New dict size = {self.L}")
                 
-            return np.nan, np.nan, np.nan # Return NaN for the statistic plot during stabilization
+            return np.nan 
             
         # --- PHASE 2: Active Detection ---
         k_S_new = self._kernel_LE_dictionary(S_test[0])
@@ -205,6 +205,7 @@ class SPD_NOUGAT:
             self.L += 1
             self.theta = np.append(self.theta, 0.0)
             print(f"Time {t}: Added new matrix to dictionary. New size = {self.L}")
+            print(f"Time {t}: Max kernel value for new matrix = {max_k:.4f} (added to dictionary)")
 
         H_ref = self._H_window(S_ref)
         h_test = self._h_window(S_test)
@@ -223,6 +224,16 @@ class SPD_NOUGAT:
             print(f"Time {t}: *** CHANGE DETECTED *** (g={g:.4f})")
             
             self.global_changepoints.append(t)
+
+            # Calculate the individual terms of the dot product
+            contributions = self.theta * h_test
+            
+            print(f"Individual Atom Contributions (Total L={self.L}):")
+            for i, val in enumerate(contributions):
+                # We print the index, the weight (theta), the kernel (h), and the product
+                print(f"  Atom {i:2d}: term = {val:8.4f}  [theta={self.theta[i]:7.4f}, h_test={h_test[i]:7.4f}]")
+            
+            print("-" * 40)
             
             # Save current dictionary to the library
             self.dictionary_library.append(self.D.copy())
@@ -230,7 +241,7 @@ class SPD_NOUGAT:
             # Trigger cooldown for the next steps
             self.cooldown_counter = self.cooldown_period
             
-        return g, self.theta.copy(), e_circ.copy()
+        return g
 
     def finalize(self):
         """Call this at the very end of your time series to save the last active dictionary."""
