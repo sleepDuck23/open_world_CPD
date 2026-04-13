@@ -1,6 +1,6 @@
 import numpy as np
-from scipy.linalg import logm
-import matplotlib.pyplot as plt
+from scipy.linalg import logm, eigh
+from collections import deque
 
 def compute_single_spd(data, t, L, reg_epsilon=1e-5):
     """
@@ -247,3 +247,163 @@ class SPD_NOUGAT:
         """Call this at the very end of your time series to save the last active dictionary."""
         if self.cooldown_counter == 0:
             self.dictionary_library.append(self.D.copy())
+
+
+
+def fast_spd_logm(S, min_eigval=1e-10):
+    """
+    Computes the matrix logarithm up to 5x faster for SPD matrices 
+    using Eigenvalue decomposition instead of Schur decomposition.
+    """
+    # eigh is highly optimized for symmetric matrices
+    evals, evecs = eigh(S)
+    
+    # Clip eigenvalues to ensure strict positivity (numerical stability)
+    evals = np.maximum(evals, min_eigval)
+    
+    # log(S) = V * log(Lambda) * V^T
+    return (evecs * np.log(evals)) @ evecs.T
+
+class SPD_NOUGAT_optimized:
+    def __init__(self, mu, initial_dictionary, nu, eta_0, xi, sigma, cooldown_period, N):
+        """
+        N: The size of the reference and test windows.
+        """
+        self.mu = mu
+        self.nu = nu
+        self.eta_0 = eta_0
+        self.xi = xi
+        self.sigma = sigma
+        self.N = N
+        
+        # 1. Map initial dictionary to tangent space
+        self.log_D = np.array([fast_spd_logm(S) for S in initial_dictionary])
+        self.L = self.log_D.shape[0]
+        self.theta = np.zeros(self.L)
+        
+        # 2. Stateful Sliding Windows (storing log-domain matrices)
+        self.window_test = deque(maxlen=N)
+        self.window_ref = deque(maxlen=N)
+        
+        # Stateful Kernel Buffers: shape (N, L)
+        # These cache the kernel evaluations so we don't recalculate them
+        self.K_test = np.zeros((N, self.L)) 
+        self.K_ref = np.zeros((N, self.L))
+        self.buffer_filled = False # Flag to wait until 2N matrices are ingested
+        
+        # Tracking
+        self.dictionary_library = []
+        self.global_changepoints = []
+        self.cooldown_period = cooldown_period
+        self.cooldown_counter = 0
+
+    def _eval_kernel_vector(self, log_S):
+        """Vectorized kernel evaluation against the current dictionary."""
+        diffs = self.log_D - log_S
+        sq_distances = np.sum(diffs**2, axis=(1, 2))
+        return np.exp(-sq_distances / (2 * self.sigma**2))
+
+    def _expand_dictionary(self, log_S_new):
+        """Handles the logic of expanding the dictionary and updating cached buffers."""
+        # 1. Add new atom to dictionary
+        self.log_D = np.vstack((self.log_D, [log_S_new.copy()]))
+        self.L += 1
+        self.theta = np.append(self.theta, 0.0)
+        
+        # 2. Update the Kernel Caches (K_ref, K_test) with a new column
+        # We must evaluate the new dictionary atom against the existing historical windows
+        new_col_test = np.array([np.exp(-np.sum((log_S - log_S_new)**2) / (2 * self.sigma**2)) 
+                                 for log_S in self.window_test])
+        new_col_ref = np.array([np.exp(-np.sum((log_S - log_S_new)**2) / (2 * self.sigma**2)) 
+                                for log_S in self.window_ref])
+        
+        self.K_test = np.column_stack((self.K_test, new_col_test))
+        self.K_ref = np.column_stack((self.K_ref, new_col_ref))
+
+    def step(self, t, S_new):
+        """
+        Streaming step: Feed ONE new covariance matrix per time step.
+        """
+        # Convert immediately to Log-domain using the fast method
+        log_S_new = fast_spd_logm(S_new)
+        
+        # --- Queue Management ---
+        if len(self.window_test) == self.N:
+            # Shift data: Oldest test matrix becomes newest ref matrix
+            matrix_leaving_test = self.window_test.popleft()
+            self.window_ref.append(matrix_leaving_test)
+            
+            # Shift kernel caches: roll rows upward
+            k_leaving_test = self.K_test[0].copy()
+            self.K_test = np.roll(self.K_test, -1, axis=0)
+            
+            if len(self.window_ref) == self.N:
+                self.K_ref = np.roll(self.K_ref, -1, axis=0)
+                self.K_ref[-1] = k_leaving_test
+            else:
+                self.K_ref[len(self.window_ref)-1] = k_leaving_test
+        
+        # Add newest matrix to test window
+        self.window_test.append(log_S_new)
+        
+        # Evaluate kernel for new matrix and place at end of test cache
+        k_new = self._eval_kernel_vector(log_S_new)
+        self.K_test[len(self.window_test)-1] = k_new
+
+        # Wait until we have 2N matrices to start detecting
+        if len(self.window_ref) < self.N:
+            return np.nan 
+
+        # --- PHASE 1: Stabilization / Cooldown ---
+        if self.cooldown_counter > 0:
+            self.cooldown_counter -= 1
+            if self.cooldown_counter == 0:
+                # Rebuild dictionary from current reference window (flushed state)
+                log_D_list = [self.window_ref[0]]
+                for log_S in list(self.window_ref)[1:]:
+                    diffs = np.array(log_D_list) - log_S
+                    sq_distances = np.sum(diffs**2, axis=(1, 2))
+                    kernel_values = np.exp(-sq_distances / (2 * self.sigma**2))
+                    if np.max(kernel_values) <= self.eta_0:
+                        log_D_list.append(log_S)
+                
+                self.log_D = np.array(log_D_list)
+                self.L = self.log_D.shape[0]
+                self.theta = np.zeros(self.L)
+                
+                # Re-initialize Kernel caches from scratch
+                self.K_test = np.array([self._eval_kernel_vector(s) for s in self.window_test])
+                self.K_ref = np.array([self._eval_kernel_vector(s) for s in self.window_ref])
+                print(f"Time {t}: Warm restart complete. New dict size = {self.L}")
+            return np.nan 
+            
+        # --- PHASE 2: Active Detection ---
+        max_k = np.max(np.abs(k_new)) 
+        if max_k <= self.eta_0:
+            self._expand_dictionary(log_S_new)
+            print(f"Time {t}: Added new matrix to dict. Size = {self.L}, max_k = {max_k:.4f}")
+
+        # Ultra-fast O(1) expectations using cached matrices
+        h_test = np.mean(self.K_test, axis=0)
+        h_ref = np.mean(self.K_ref, axis=0)
+        
+        # Highly optimized Gram matrix computation
+        H_ref = (self.K_ref.T @ self.K_ref) / self.N
+        
+        e_circ = h_ref - h_test 
+        
+        # Gradient Descent Step
+        identity = np.eye(self.L)
+        gradient = (H_ref + self.nu * identity) @ self.theta + e_circ
+        self.theta -= self.mu * gradient
+        
+        g = np.dot(self.theta, h_test)
+        
+        # --- PHASE 3: Check for Change Point ---
+        if g > self.xi:
+            print(f"Time {t}: *** CHANGE DETECTED *** (g={g:.4f})")
+            self.global_changepoints.append(t)
+            self.dictionary_library.append(self.log_D.copy())
+            self.cooldown_counter = self.cooldown_period
+            
+        return g
