@@ -407,3 +407,7 @@ class SPD_NOUGAT_optimized:
             self.cooldown_counter = self.cooldown_period
             
         return g
+    def finalize(self):
+        """Call this at the very end of your time series to save the last active dictionary."""
+        if self.cooldown_counter == 0:
+            self.dictionary_library.append(self.log_D.copy())
