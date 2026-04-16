@@ -109,7 +109,7 @@ def generate_alternating_wishart_series(total_steps, changepoints, distribution_
             
         # Generate a Wishart SPD matrix from the current base covariance
         X = np.random.multivariate_normal(np.zeros(dim), current_cov, size=df)
-        S = np.dot(X.T, X) / df
+        S = np.dot(X.T, X) #/ df
         data.append(S)
         
     return np.array(data)
