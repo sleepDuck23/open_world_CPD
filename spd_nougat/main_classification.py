@@ -6,13 +6,13 @@ import matplotlib.patches as mpatches
 
 # --- 1. Setup & Hyperparameters ---
 np.random.seed(42)
-Total_Time = 10000
+Total_Time = 12000
 d = 3
 N_window = 20  
 
 # True Change points and the alternating states we want to test
-true_changepoints = [2000, 4000, 6000, 8000]  
-distribution_sequence = [0, 1, 0, 2, 0] 
+true_changepoints = [2000, 4000, 6000, 8000, 10000]  
+distribution_sequence = [0, 1, 0, 2, 1, 2] 
 
 eta_0_val = 0.35
 sigma_val = 1.44 
