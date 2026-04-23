@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg') # CRITICAL: Must be called before importing pyplot on an SSH server
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,13 +10,12 @@ from spd_generation import generate_alternating_wishart_series
 
 # --- 1. Setup & Hyperparameters ---
 np.random.seed(42)
-Total_Time = 100000  # Long sequence to allow false alarms to naturally occur
-num_runs = 10000    
+Total_Time = 100000  
+num_runs = 10     
 
 d = 3
 N_window = 20  
 
-# NO change points. The system stays in state '0' forever.
 true_changepoints = []  
 distribution_sequence = [0] 
 
@@ -25,7 +27,6 @@ xi_val = 0.2
 psi_val = 0.45 
 
 # --- 2. Ultra-Lightweight Data Storage ---
-# We ONLY store the final counts and intervals to save ~16GB of RAM
 false_alarms_per_run = []
 all_fa_intervals = [] 
 time_to_first_fa = [] 
@@ -36,7 +37,6 @@ print("Memory optimization active: Continuous tracking disabled.")
 # --- 3. Main Monte Carlo Loop ---
 for run in tqdm(range(num_runs), desc="Simulation Progress"):
     
-    # 3a. Generate stationary data
     raw_data = generate_alternating_wishart_series(
         total_steps=Total_Time, 
         changepoints=true_changepoints, 
@@ -45,7 +45,6 @@ for run in tqdm(range(num_runs), desc="Simulation Progress"):
         df=10
     )
     
-    # 3b. Initialization
     Sref_initial = raw_data[0:N_window]
     initial_dict = warm_start_dict(Sref_initial, eta_0=eta_0_val, sigma=sigma_val)
     
@@ -60,18 +59,15 @@ for run in tqdm(range(num_runs), desc="Simulation Progress"):
         N=N_window  
     )
     
-    # 3c. Online Loop 
     for t in range(Total_Time):
         S_new = raw_data[t]
-        nougat.step(t, S_new) # We step the algorithm, but we don't save the g_stat to memory!
+        nougat.step(t, S_new) 
             
-    # 3d. Record False Alarm Counts & Intervals
     cps = nougat.global_changepoints
     false_alarms_per_run.append(len(cps))
     
     if len(cps) > 0:
         time_to_first_fa.append(cps[0])
-        # Calculate the gap between false alarms
         intervals = np.diff([0] + cps) 
         all_fa_intervals.extend(intervals)
 
@@ -96,23 +92,18 @@ if all_fa_intervals:
     print(f"Total False Alarms Recorded: {len(all_fa_intervals)}")
     print(f"Mean Time Between False Alarms (MTBFA): {mean_time_between_fa:.2f} steps")
     print(f"Median Time Between False Alarms: {median_time_between_fa:.2f} steps")
-    print(f"Std Dev of Intervals: {std_time_between_fa:.2f} steps")
 else:
     print("\n--- False Alarm Time Metrics ---")
-    print("Zero false alarms detected across all runs. Algorithm is profoundly conservative.")
+    print("Zero false alarms detected across all runs.")
 
 
 # --- 5. Export Plotting Data to CSV ---
 print("\nExporting data to CSV...")
 
 if all_fa_intervals:
-    df_fa = pd.DataFrame({
-        'false_alarm_intervals': all_fa_intervals
-    })
+    df_fa = pd.DataFrame({'false_alarm_intervals': all_fa_intervals})
     df_fa.to_csv('fa_intervals_distribution.csv', index=False)
-    print("Saved: fa_intervals_distribution.csv")
     
-    # Optional: Save a summary stats file
     df_summary = pd.DataFrame([{
         'Total_Runs': num_runs,
         'Sequence_Length': Total_Time,
@@ -122,8 +113,7 @@ if all_fa_intervals:
         'MTBFA_Std': std_time_between_fa
     }])
     df_summary.to_csv('fa_summary_statistics.csv', index=False)
-    print("Saved: fa_summary_statistics.csv")
-
+    print("Saved CSV files.")
 
 # --- 6. Visualizations & PDF Export ---
 if all_fa_intervals:
@@ -131,9 +121,7 @@ if all_fa_intervals:
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Use more bins for a 100k length sequence to see the true curve
     ax.hist(all_fa_intervals, bins=100, color='salmon', edgecolor='black', alpha=0.7)
-    
     ax.axvline(np.mean(all_fa_intervals), color='red', linestyle='dashed', linewidth=2, 
                 label=f'Mean (MTBFA): {np.mean(all_fa_intervals):.0f}')
     ax.axvline(np.median(all_fa_intervals), color='blue', linestyle='dashed', linewidth=2, 
@@ -148,6 +136,5 @@ if all_fa_intervals:
     fig.tight_layout()
     fig.savefig('fa_distribution_100k.pdf', format='pdf', bbox_inches='tight')
     print("Saved: fa_distribution_100k.pdf")
-    plt.show()
-else:
-    print("\nNo plot generated because no false alarms occurred.")
+    # Note: No plt.show() here. It just saves and closes.
+    plt.close()
